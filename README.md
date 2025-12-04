@@ -1,4 +1,4 @@
-# Federated Sign Language Calculator (FLASLR)
+# Federated Sign Language Calculator 
 
 A federated learning project that trains a sign language recognition model across edge devices (Raspberry Pi 5) to recognize 15 ASL gestures (digits 0-9 and operators +, -, *, /, =) for real-time calculator operations.
 
