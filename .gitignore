@@ -10,20 +10,6 @@ env/
 ENV/
 .venv
 
-# PyTorch
-*.pth
-*.pt
-*.pkl
-
-# Data
-data/
-datasets/
-*.jpg
-*.png
-*.jpeg
-*.mp4
-*.avi
-
 # IDE
 .vscode/
 .idea/
@@ -34,8 +20,9 @@ datasets/
 .DS_Store
 Thumbs.db
 
-# Project specific
-models/
-results/
-logs/
-*.log
+# Large video files (keep images and models for team collaboration)
+*.mp4
+*.avi
+*.mov
+
+
