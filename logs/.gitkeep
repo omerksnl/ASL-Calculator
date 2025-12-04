@@ -1,0 +1,3 @@
+# This file ensures the logs/ directory is tracked by Git
+# Training logs and experiment logs will be stored here
+
