@@ -81,7 +81,7 @@ Several studies have explored federated learning for computer vision tasks. Howe
 
 #### 3.1.1. Client Devices: Raspberry Pi 5
 
-**Device:** 2x Raspberry Pi 5 (4GB RAM)
+**Device:** 1x Raspberry Pi 5 (4GB RAM)
 
 **Specifications:**
 - CPU: Broadcom BCM2712 quad-core Cortex-A76 @ 2.4GHz
@@ -92,7 +92,13 @@ Several studies have explored federated learning for computer vision tasks. Howe
 - Cost: ~3,240.10 TL per device (Robotistan)
 - Additional costs: Power supply (~716.26 TL in Robotistan), MicroSD card (~180 TL in Amazon)
 
-**Justification:** The Raspberry Pi 5 represents an ideal edge computing platform for our project. It provides sufficient computational power for local model training while maintaining realistic resource constraints that mirror real-world edge devices (smartphones, IoT devices, embedded systems). The 4GB RAM limitation forces us to optimize our model architecture and training procedures, making our solution more practical and deployable. The CNN we'll train will already be able to track hand movement. The low cost (~4,136 TL per complete setup) makes it accessible for us while still providing meaningful computational capabilities.
+**Justification:** The Raspberry Pi 5 represents an ideal edge computing platform for our project. It provides sufficient computational power for local model training while maintaining realistic resource constraints that mirror real-world edge devices (smartphones, IoT devices, embedded systems). The 4GB RAM limitation forces us to optimize our model architecture and training procedures, making our solution more practical and deployable. The CNN we'll train will already be able to track hand movement. 
+
+**Training Approach:** We will use a single Raspberry Pi 5 and run federated learning clients sequentially (not simultaneously). This approach:
+- Reduces hardware costs from ~8,272 TL to ~4,136 TL (50% cost savings)
+- Still demonstrates the federated learning concept effectively
+- Allows us to simulate two different clients by running client.py with different datasets sequentially
+- Maintains the same experimental validity for comparing IID vs Non-IID data distributions
 
 #### 3.1.2. Server Device: Laptop
 
@@ -180,20 +186,22 @@ We employ transfer learning by using MobileNetV2 pre-trained on ImageNet, which 
 - **Task:** Create the Non-IID datasets
   - `pi1_data_noniid` (Classes 0-9)
   - `pi2_data_noniid` (Classes +, -, *, /, =)
-- **Task:** Use scp to transfer these private datasets to their respective Pis
+- **Task:** Transfer these datasets to the Pi (will be used sequentially as Client 1 and Client 2)
 - **Task:** Refactor `train_local.py` into `client.py` and `server.py` using the Flower NumPyClient template
 - **Result:** A functional `client.py` and `server.py`
 
 #### Week 5
 - **Task:** Run the first full federated training using the standard FedAvg algorithm
   - `server.py` on Laptop
-  - `client.py` with `pi1_data_noniid` on Pi 1
-  - `client.py` with `pi2_data_noniid` on Pi 2
+  - `client.py` with `pi1_data_noniid` on Pi (run as Client 1)
+  - After Client 1 completes, run `client.py` with `pi2_data_noniid` on Pi (run as Client 2)
+  - Repeat this sequential process for each FL round
+- **Note:** The Pi will alternate between being Client 1 and Client 2 in each round. Clients run sequentially, not simultaneously.
 - **Task:** Let the system run for 10-20 FL rounds
 - **Result:** The first global model: `global_model_noniid.pth`
 
 #### Week 6
-- **Task:** Create and distribute "fair" IID datasets (each Pi gets a random 50% of all 15 classes)
+- **Task:** Create and distribute "fair" IID datasets (split into two parts: each part gets a random 50% of all 15 classes for sequential client training)
 - **Task:** Re-run the FL training
 - **First Result:** The second global model: `global_model_iid.pth`
 - **Second Result:** An accuracy graph comparing `local_baseline`, `global_model_iid`, and `global_model_noniid` on the laptop's test set. This is the core result of our experiment

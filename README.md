@@ -12,7 +12,7 @@ This project implements a federated learning system to train a MobileNetV2-based
 
 ## Features
 
-- **Federated Learning:** Train models across multiple Raspberry Pi devices using Flower framework
+- **Federated Learning:** Train models using Flower framework with sequential client training on a single Raspberry Pi
 - **ASL Recognition:** Recognize 15 static gestures (0-9 digits + 5 operators)
 - **Real-time Calculator:** Live webcam-based calculator using trained model
 - **Non-IID Analysis:** Compare FedAvg vs FedProx strategies on non-IID data
@@ -24,11 +24,13 @@ FLASLR/
 ├── definition.md              # Complete project definition and plan
 ├── README.md                   # This file
 ├── SETUP.md                    # Detailed setup instructions
+├── HARDWARE.md                 # Hardware requirements and purchase guide
 ├── requirements.txt            # Python dependencies
 ├── verify_installations.py     # Script to test all installations
 ├── src/
 │   ├── __init__.py
 │   ├── create_data.py          # Week 2: Data collection tool
+│   ├── count_data.py           # Utility: count images per class folder
 │   ├── train_local.py          # Week 3: Baseline local training
 │   ├── client.py               # Week 4: Federated learning client
 │   ├── server.py               # Week 4: Federated learning server
@@ -50,7 +52,7 @@ FLASLR/
 
 - **Python 3.11** (required - MediaPipe doesn't support Python 3.13+ yet)
 - Webcam for data collection
-- (Optional) 2x Raspberry Pi 5 devices for federated training
+- (Optional) 1x Raspberry Pi 5 device for federated training (clients run sequentially)
 
 ### Setup
 
@@ -112,6 +114,13 @@ python src/create_data.py
 
 Images are saved to `data/master_dataset/master_data/` organized by class folders.
 
+#### Check dataset counts
+```bash
+python src/count_data.py
+# or point to another root
+python src/count_data.py --root data/master_dataset/master_data
+```
+
 ### Week 3: Local Training (Baseline)
 
 Train a baseline model locally:
@@ -127,10 +136,18 @@ python src/train_local.py
 python src/server.py
 ```
 
-**Client (on each Raspberry Pi):**
+**Client (on Raspberry Pi - run sequentially):**
 ```bash
-python src/client.py --data-dir <path-to-client-data>
+# First, run as Client 1:
+python src/client.py --data-dir <path-to-pi1-data> --client-id 1
+
+# After Client 1 completes, run as Client 2:
+python src/client.py --data-dir <path-to-pi2-data> --client-id 2
+
+# Repeat for each federated learning round
 ```
+
+**Note:** With a single Pi, clients run sequentially (not simultaneously). The server will wait for each client to connect and complete training before proceeding to the next round.
 
 ### Week 7: Real-time Calculator Demo
 
