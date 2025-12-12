@@ -23,7 +23,8 @@ This project implements a federated learning system to train a MobileNetV2-based
 FLASLR/
 ├── definition.md              # Complete project definition and plan
 ├── README.md                   # This file
-├── SETUP.md                    # Detailed setup instructions
+├── SETUP.md                    # Detailed setup instructions (laptop)
+├── PI_SETUP.md                 # Step-by-step Raspberry Pi 5 setup guide
 ├── HARDWARE.md                 # Hardware requirements and purchase guide
 ├── requirements.txt            # Python dependencies
 ├── verify_installations.py     # Script to test all installations
@@ -53,6 +54,8 @@ FLASLR/
 - **Python 3.11** (required - MediaPipe doesn't support Python 3.13+ yet)
 - Webcam for data collection
 - (Optional) 1x Raspberry Pi 5 device for federated training (clients run sequentially)
+
+**📘 New to Raspberry Pi?** See [PI_SETUP.md](PI_SETUP.md) for complete step-by-step setup instructions!
 
 ### Setup
 
@@ -130,6 +133,46 @@ python src/train_local.py
 ```
 
 ### Week 4-6: Federated Training
+
+#### Connecting to Raspberry Pi via SSH
+
+Before running the federated training client, you need to connect to your Raspberry Pi:
+
+1. **Find your Pi's IP address:**
+   - do art -a and search for the other dynamic link in your wifi
+   - that one will probably be your pi's IP adress.
+
+2. **Connect via SSH from your laptop:**
+   ```bash
+   # On Windows PowerShell:
+   ssh pi@<PI_IP_ADDRESS>
+   # Example: ssh pi@192.168.1.100
+   
+   # Or using hostname (if available):
+   ssh pi@raspberrypi.local
+   ```
+
+3. **Enter password when prompted:** `cs3502025` (our pi's password) 
+
+4. **Navigate to project directory:**
+   ```bash
+   cd ~/ASL-Calculator
+   source venv311/bin/activate
+   ```
+
+5. **Safely disconnect when done:**
+   ```bash
+   exit  # Exit SSH session
+   # Or shutdown Pi safely:
+   sudo shutdown -h now
+   ```
+
+**Troubleshooting:**
+- "Connection refused": SSH may not be enabled - check `PI_SETUP.md` for enabling SSH
+- "Connection timed out": Pi and laptop may be on different networks
+- Can't find IP: Check router's connected devices or use `arp -a` on Windows
+
+#### Running Federated Training
 
 **Server (on laptop):**
 ```bash
