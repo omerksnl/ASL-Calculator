@@ -20,9 +20,27 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Large video files (keep images and models for team collaboration)
+# Large video files
 *.mp4
 *.avi
 *.mov
 
+# Model files (too large for GitHub - 100MB limit)
+models/*.pth
+models/*.pt
+*.pth
+*.pt
 
+# Training data (too large - thousands of images)
+data/master_dataset/master_data/**/*.jpg
+data/master_dataset/master_data/**/*.jpeg
+data/master_dataset/master_data/**/*.png
+
+# Generated files and results
+results/
+logs/
+screenshots/
+screenshot_*.jpg
+
+# Keep folder structure with .gitkeep files
+!**/.gitkeep
