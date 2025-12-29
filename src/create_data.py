@@ -15,9 +15,10 @@ mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 hands = mp_hands.Hands(
     static_image_mode=False,
-    max_num_hands=1,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.5
+    max_num_hands=2,
+    min_detection_confidence=0.7,  # Balanced for stability
+    min_tracking_confidence=0.6,   # Balanced for smoother tracking
+    model_complexity=1             # Better accuracy for complex poses
 )
 
 def create_class_folders():
@@ -41,6 +42,29 @@ def get_hand_bbox(landmarks, image_shape):
         return (x_min, y_min, x_max, y_max)
     return None
 
+def get_hand_center(landmarks, image_shape):
+    """Get the center point of a hand"""
+    h, w = image_shape[:2]
+    x_coords = [landmark.x * w for landmark in landmarks.landmark]
+    y_coords = [landmark.y * h for landmark in landmarks.landmark]
+    center_x = sum(x_coords) / len(x_coords)
+    center_y = sum(y_coords) / len(y_coords)
+    return (center_x, center_y)
+
+def check_hand_separation(hand_landmarks_list, image_shape, min_distance=80):
+    """Check if hands are well separated (not colliding)"""
+    if len(hand_landmarks_list) < 2:
+        return True, None
+    
+    centers = [get_hand_center(hand, image_shape) for hand in hand_landmarks_list]
+    
+    # Calculate distance between hand centers
+    dx = centers[0][0] - centers[1][0]
+    dy = centers[0][1] - centers[1][1]
+    distance = np.sqrt(dx**2 + dy**2)
+    
+    return distance >= min_distance, distance
+
 def crop_hand_region(image, bbox):
     x_min, y_min, x_max, y_max = bbox
     cropped = image[y_min:y_max, x_min:x_max]
@@ -49,10 +73,17 @@ def crop_hand_region(image, bbox):
 def save_image(image, class_name, count):
     class_dir = DATA_DIR / CLASSES[class_name]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{class_name}_{count:04d}_{timestamp}.jpg"
+    
+    # Use class folder name instead of symbol for filename to avoid Windows filename issues
+    safe_name = CLASSES[class_name]
+    filename = f"{safe_name}_{count:04d}_{timestamp}.jpg"
     filepath = class_dir / filename
     resized = cv2.resize(image, (224, 224))
-    cv2.imwrite(str(filepath), resized)
+    success = cv2.imwrite(str(filepath), resized)
+    
+    if not success:
+        print(f"✗ Warning: Failed to write file {filepath}")
+    
     return filepath
 
 def count_images_in_class(class_name):
@@ -104,8 +135,16 @@ def main():
 
             annotated_frame = frame.copy()
             bbox = None
+            all_bboxes = []
+            hands_well_separated = True
+            hand_distance = None
 
             if results.multi_hand_landmarks:
+                # Check hand separation first
+                hands_well_separated, hand_distance = check_hand_separation(
+                    results.multi_hand_landmarks, frame.shape
+                )
+                
                 for hand_landmarks in results.multi_hand_landmarks:
                     mp_drawing.draw_landmarks(
                         annotated_frame,
@@ -115,14 +154,49 @@ def main():
                         mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2)
                     )
 
-                    bbox = get_hand_bbox(hand_landmarks, frame.shape)
-
-                    if bbox:
-                        x_min, y_min, x_max, y_max = bbox
+                    hand_bbox = get_hand_bbox(hand_landmarks, frame.shape)
+                    if hand_bbox:
+                        all_bboxes.append(hand_bbox)
+                        x_min, y_min, x_max, y_max = hand_bbox
                         cv2.rectangle(annotated_frame, (x_min, y_min), (x_max, y_max), (255, 0, 0), 2)
+                
+                # Combine all bounding boxes into one
+                if all_bboxes:
+                    x_mins = [bbox[0] for bbox in all_bboxes]
+                    y_mins = [bbox[1] for bbox in all_bboxes]
+                    x_maxs = [bbox[2] for bbox in all_bboxes]
+                    y_maxs = [bbox[3] for bbox in all_bboxes]
+                    
+                    bbox = (min(x_mins), min(y_mins), max(x_maxs), max(y_maxs))
+                    
+                    # Draw the combined bounding box - always green for 2 hands
+                    if len(all_bboxes) > 1:
+                        box_color = (0, 255, 0)  # Green for 2 hands detected
+                        cv2.rectangle(annotated_frame, 
+                                    (bbox[0], bbox[1]), 
+                                    (bbox[2], bbox[3]), 
+                                    box_color, 3)
 
             cv2.putText(annotated_frame, "Press 0-9, +, -, *, /, = to save | 'q' to quit", 
                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # Show hand detection status
+            if results.multi_hand_landmarks:
+                num_hands = len(results.multi_hand_landmarks)
+                
+                if num_hands == 2:
+                    if hands_well_separated:
+                        hand_text = f"Hands detected: {num_hands} - Good!"
+                        color = (0, 255, 0)  # Green
+                    else:
+                        hand_text = f"Hands detected: {num_hands} - Close"
+                        color = (255, 200, 0)  # Yellow-orange warning
+                else:
+                    hand_text = f"Hands detected: {num_hands}"
+                    color = (255, 255, 0)  # Yellow
+                    
+                cv2.putText(annotated_frame, hand_text, 
+                           (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
             if current_class:
                 class_name = CLASSES[current_class]
@@ -150,7 +224,13 @@ def main():
                     if cropped.size > 0:
                         filepath = save_image(cropped, class_key, image_counts[class_key])
                         image_counts[class_key] += 1
-                        print(f"✓ Saved: {filepath.name} ({image_counts[class_key]} total for '{CLASSES[class_key]}')")
+                        
+                        # Add subtle separation quality indicator for 2-hand gestures
+                        quality_msg = ""
+                        if results.multi_hand_landmarks and len(results.multi_hand_landmarks) == 2:
+                            quality_msg = " ✓" if hands_well_separated else ""
+                        
+                        print(f"✓ Saved: {filepath.name} ({image_counts[class_key]} total for '{CLASSES[class_key]}'){quality_msg}")
                     else:
                         print(f"✗ Failed to crop image for '{CLASSES[class_key]}'")
                 else:
