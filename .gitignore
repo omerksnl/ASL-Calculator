@@ -31,11 +31,6 @@ models/*.pt
 *.pth
 *.pt
 
-# Training data (too large - thousands of images)
-data/master_dataset/master_data/**/*.jpg
-data/master_dataset/master_data/**/*.jpeg
-data/master_dataset/master_data/**/*.png
-
 # Generated files and results
 results/
 logs/

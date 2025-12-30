@@ -32,6 +32,10 @@ VAL_SPLIT = 0.2
 IMG_SIZE = 224
 NUM_WORKERS = 4
 
+# Training options
+RESUME_TRAINING = True  # Set to True to resume from latest checkpoint
+START_FROM_EPOCH = 0  # Will be overridden if resuming
+
 # Class mapping
 CLASSES = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
            'divide', 'equals', 'minus', 'multiply', 'plus']
@@ -263,11 +267,50 @@ def save_checkpoint(model, optimizer, epoch, history, best_acc, save_path):
     print(f"✓ Checkpoint saved to {save_path}")
 
 
+def find_latest_checkpoint(models_dir):
+    """Find the most recent best model checkpoint"""
+    model_files = list(models_dir.glob("asl_model_best_*.pth"))
+    
+    if not model_files:
+        return None
+    
+    # Sort by modification time, get latest
+    latest_model = max(model_files, key=lambda p: p.stat().st_mtime)
+    return latest_model
+
+
+def load_checkpoint(checkpoint_path, model, optimizer, device):
+    """Load model checkpoint and return epoch, history, best_acc"""
+    print(f"Loading checkpoint from: {checkpoint_path}")
+    
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    
+    epoch = checkpoint.get('epoch', 0)
+    history = checkpoint.get('history', {
+        'train_loss': [],
+        'train_acc': [],
+        'val_loss': [],
+        'val_acc': []
+    })
+    best_acc = checkpoint.get('best_acc', 0)
+    
+    print(f"✓ Checkpoint loaded successfully!")
+    print(f"  Starting from epoch: {epoch}")
+    print(f"  Best accuracy so far: {best_acc:.2f}%")
+    
+    return epoch, history, best_acc
+
+
 def main():
     print("=" * 80)
     print("ASL Gesture Recognition - Local Training")
     print("=" * 80)
     print(f"Training started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Resume training: {'YES' if RESUME_TRAINING else 'NO'}")
+    print(f"Target epochs: {NUM_EPOCHS}")
     print()
     
     # Check CUDA availability
@@ -347,26 +390,55 @@ def main():
         optimizer, mode='max', factor=0.5, patience=5
     )
     
-    # Training history
+    # Check if resuming from checkpoint
+    start_epoch = 1
+    best_val_acc = 0.0
     history = {
         'train_loss': [],
         'train_acc': [],
         'val_loss': [],
         'val_acc': []
     }
-    
-    best_val_acc = 0.0
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    if RESUME_TRAINING:
+        checkpoint_path = find_latest_checkpoint(MODELS_DIR)
+        if checkpoint_path:
+            print("\n" + "=" * 80)
+            print("RESUMING TRAINING FROM CHECKPOINT")
+            print("=" * 80)
+            loaded_epoch, history, best_val_acc = load_checkpoint(
+                checkpoint_path, model, optimizer, device
+            )
+            start_epoch = loaded_epoch + 1
+            # Use the same timestamp from the checkpoint filename
+            timestamp = checkpoint_path.stem.split('_')[-2] + '_' + checkpoint_path.stem.split('_')[-1]
+            print(f"✓ Will continue training from epoch {start_epoch}")
+            print("=" * 80)
+            print()
+        else:
+            print("✓ No checkpoint found. Starting fresh training.")
+            print()
+    
     print("=" * 80)
-    print("Starting Training")
+    if start_epoch > 1:
+        print(f"Resuming Training from Epoch {start_epoch}/{NUM_EPOCHS}")
+    else:
+        print("Starting Training")
     print("=" * 80)
     print("Press Ctrl+C to stop training early")
     print()
     
+    # Check if already completed
+    if start_epoch > NUM_EPOCHS:
+        print(f"✓ Training already completed ({start_epoch-1}/{NUM_EPOCHS} epochs)")
+        print(f"✓ Best accuracy: {best_val_acc:.2f}%")
+        print("\nTo train more epochs, increase NUM_EPOCHS in the script.")
+        return
+    
     # Training loop
     try:
-        for epoch in range(1, NUM_EPOCHS + 1):
+        for epoch in range(start_epoch, NUM_EPOCHS + 1):
             print(f"\nEpoch {epoch}/{NUM_EPOCHS}")
             print("-" * 60)
             
