@@ -90,7 +90,7 @@ def get_hand_bbox(landmarks, image_shape):
     x_coords = [landmark.x * w for landmark in landmarks.landmark]
     y_coords = [landmark.y * h for landmark in landmarks.landmark]
     
-    padding = 40
+    padding = 20  # Match training script padding
     x_min = max(0, int(min(x_coords) - padding))
     y_min = max(0, int(min(y_coords) - padding))
     x_max = min(w, int(max(x_coords) + padding))
@@ -133,13 +133,14 @@ def predict_gesture(model, image, transform, device):
     return predicted_class, confidence_score, probabilities[0].cpu().numpy()
 
 
-def draw_ui(frame, prediction, confidence, fps, num_hands, top_predictions=None):
+def draw_ui(frame, prediction, confidence, fps, num_hands, top_predictions=None, debug_mode=False):
     """Draw UI elements on frame"""
     h, w = frame.shape[:2]
     
     # Create semi-transparent overlay for info panel
     overlay = frame.copy()
-    cv2.rectangle(overlay, (10, 10), (w - 10, 180), (0, 0, 0), -1)
+    panel_height = 280 if debug_mode and top_predictions else 180
+    cv2.rectangle(overlay, (10, 10), (w - 10, panel_height), (0, 0, 0), -1)
     frame = cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
     
     # Title
@@ -175,12 +176,24 @@ def draw_ui(frame, prediction, confidence, fps, num_hands, top_predictions=None)
         bar_width = int((w - 40) * confidence)
         cv2.rectangle(frame, (20, 150), (20 + bar_width, 165), color, -1)
         cv2.rectangle(frame, (20, 150), (w - 20, 165), (255, 255, 255), 2)
+        
+        # Show top 3 predictions in debug mode
+        if debug_mode and top_predictions:
+            y_offset = 190
+            cv2.putText(frame, "Top 3 predictions:", 
+                       (20, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+            for i, (cls, prob) in enumerate(top_predictions[:3]):
+                y_offset += 25
+                text = f"  {i+1}. {cls}: {prob*100:.1f}%"
+                cv2.putText(frame, text, 
+                           (20, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
     else:
         cv2.putText(frame, "Prediction: Detecting...", 
                     (20, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (150, 150, 150), 2)
     
     # Instructions at bottom
-    cv2.putText(frame, "Press 'q' to quit | 's' to screenshot | 'h' to toggle help", 
+    instructions = "Press 'q' to quit | 's' to screenshot | 'h' help | 'd' debug"
+    cv2.putText(frame, instructions, 
                 (20, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
     
     return frame
@@ -277,7 +290,11 @@ def main():
     print()
     print("=" * 80)
     print("Starting live detection...")
-    print("Press 'q' to quit, 's' to screenshot, 'h' for help")
+    print("Controls:")
+    print("  q - Quit")
+    print("  s - Screenshot")
+    print("  h - Toggle help")
+    print("  d - Toggle debug (shows top 3 predictions + cropped hand)")
     print("=" * 80)
     print()
     
@@ -290,6 +307,7 @@ def main():
     prev_time = time.time()
     
     show_help = False
+    debug_mode = False
     screenshot_count = 0
     
     try:
@@ -309,6 +327,8 @@ def main():
             prediction = None
             confidence = 0.0
             num_hands = 0
+            top_predictions = None
+            cropped_hand = None
             
             # Detect hands and make prediction
             if results.multi_hand_landmarks:
@@ -346,9 +366,14 @@ def main():
                     # Crop and predict
                     hand_region = frame[y_min:y_max, x_min:x_max]
                     if hand_region.size > 0:
+                        cropped_hand = hand_region.copy()  # Save for debug view
                         pred_class, conf, probs = predict_gesture(
                             model, hand_region, transform, device
                         )
+                        
+                        # Get top 3 predictions
+                        top_indices = np.argsort(probs)[::-1][:3]
+                        top_predictions = [(CLASSES[idx], probs[idx]) for idx in top_indices]
                         
                         # Smooth predictions
                         prediction_buffer.append(pred_class)
@@ -368,14 +393,30 @@ def main():
             
             # Draw UI
             annotated_frame = draw_ui(annotated_frame, prediction, confidence, 
-                                     avg_fps, num_hands)
+                                     avg_fps, num_hands, top_predictions, debug_mode)
             
             # Show help overlay if requested
             if show_help:
                 annotated_frame = draw_help(annotated_frame)
             
-            # Display
+            # Display main window
             cv2.imshow('ASL Live Demo', annotated_frame)
+            
+            # Show debug window with cropped hand
+            if debug_mode and cropped_hand is not None:
+                # Resize for better visibility
+                debug_size = 300
+                h_crop, w_crop = cropped_hand.shape[:2]
+                if h_crop > 0 and w_crop > 0:
+                    aspect = w_crop / h_crop
+                    if aspect > 1:
+                        new_w = debug_size
+                        new_h = int(debug_size / aspect)
+                    else:
+                        new_h = debug_size
+                        new_w = int(debug_size * aspect)
+                    debug_img = cv2.resize(cropped_hand, (new_w, new_h))
+                    cv2.imshow('Debug: Cropped Hand', debug_img)
             
             # Handle keyboard input
             key = cv2.waitKey(1) & 0xFF
@@ -385,6 +426,10 @@ def main():
                 break
             elif key == ord('h'):
                 show_help = not show_help
+            elif key == ord('d'):
+                debug_mode = not debug_mode
+                status = "ON" if debug_mode else "OFF"
+                print(f"Debug mode: {status}")
             elif key == ord('s'):
                 screenshot_path = f"screenshot_{screenshot_count:03d}.jpg"
                 cv2.imwrite(screenshot_path, annotated_frame)
