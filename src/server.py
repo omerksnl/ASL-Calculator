@@ -13,7 +13,7 @@ import json
 # Configuration
 MODELS_DIR = Path("models/federated")
 RESULTS_DIR = Path("results/federated")
-NUM_ROUNDS = 20  # Number of federated learning rounds
+NUM_ROUNDS = 5  # Number of federated learning rounds
 MIN_CLIENTS = 2  # Minimum number of clients to start training
 MIN_AVAILABLE_CLIENTS = 2  # Minimum clients that must be available
 
@@ -97,6 +97,8 @@ class FederatedStrategy(FedAvg):
         super().__init__(*args, **kwargs)
         self.round_accuracies = []
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.current_parameters = None
+        self.best_accuracy = 0.0
     
     def aggregate_fit(self, server_round, results, failures):
         """Aggregate fit results"""
@@ -112,10 +114,14 @@ class FederatedStrategy(FedAvg):
             server_round, results, failures
         )
         
+        # Save parameters for later use
+        if aggregated_parameters is not None:
+            self.current_parameters = fl.common.parameters_to_ndarrays(aggregated_parameters)
+        
         # Save global model every 5 rounds
         if server_round % 5 == 0 and aggregated_parameters is not None:
             save_global_model(
-                fl.common.parameters_to_ndarrays(aggregated_parameters),
+                self.current_parameters,
                 server_round,
                 self.timestamp
             )
@@ -151,14 +157,28 @@ class FederatedStrategy(FedAvg):
             print(f"  Accuracy: {accuracy:.2f}%")
             
             # Save best model
-            if len(self.round_accuracies) > 0:
-                best_acc = max(self.round_accuracies, key=lambda x: x['accuracy'])
-                if accuracy >= best_acc['accuracy']:
-                    save_path = MODELS_DIR / f"federated_model_best_{self.timestamp}.pth"
-                    if server_round > 0:
-                        # Get parameters from last aggregation
-                        model = ASLModel(num_classes=len(CLASSES), pretrained=False)
-                        print(f"★ New best accuracy! Saving model to: {save_path.name}")
+            if accuracy > self.best_accuracy and self.current_parameters is not None:
+                self.best_accuracy = accuracy
+                save_global_model(
+                    self.current_parameters,
+                    server_round,
+                    self.timestamp
+                )
+                # Also save as "best"
+                best_path = MODELS_DIR / f"federated_model_best_{self.timestamp}.pth"
+                model = ASLModel(num_classes=len(CLASSES), pretrained=False)
+                params_dict = zip(model.state_dict().keys(), self.current_parameters)
+                state_dict = {k: torch.tensor(v) for k, v in params_dict}
+                checkpoint = {
+                    'round': server_round,
+                    'model_state_dict': state_dict,
+                    'classes': CLASSES,
+                    'num_classes': len(CLASSES),
+                    'timestamp': self.timestamp,
+                    'best_accuracy': self.best_accuracy
+                }
+                torch.save(checkpoint, best_path)
+                print(f"★ New best accuracy ({accuracy:.2f}%)! Model saved: {best_path.name}")
         
         print(f"{'='*80}\n")
         return loss_aggregated, metrics_aggregated
@@ -183,7 +203,7 @@ def main():
                        help='Server host address (0.0.0.0 to accept all connections)')
     parser.add_argument('--port', type=int, default=8080,
                        help='Server port (default: 8080)')
-    parser.add_argument('--rounds', type=int, default=20,
+    parser.add_argument('--rounds', type=int, default=5,
                        help='Number of federated learning rounds')
     parser.add_argument('--min-clients', type=int, default=2,
                        help='Minimum number of clients required per round')
